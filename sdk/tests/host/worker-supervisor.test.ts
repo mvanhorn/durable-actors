@@ -139,6 +139,51 @@ test("a hanging onSleep does not hold up the eviction", { timeout: 30000 }, asyn
     }
 })
 
+test("a forced eviction stops a running call without waiting for it", { timeout: 30000 }, async () => {
+    const root = await createTypeScriptConsumer("StuckWorker")
+    const file = path.join(root, "src/actors.ts")
+    await writeFile(
+        file,
+        `import { Actor, Persisted } from ${JSON.stringify(fileURLToPath(new URL("../../src/index.js", import.meta.url)))}
+        export class StuckWorker extends Actor {
+            @Persisted sleeps = 0
+            async onSleep(): Promise<void> {
+                this.sleeps += 1
+            }
+            async stuck(): Promise<void> {
+                await new Promise(() => {})
+            }
+            async read(): Promise<number> {
+                return this.sleeps
+            }
+        }`
+    )
+    const supervisor = new ActorWorkerSupervisor({
+        actorEntrypointUrl: await buildConsumer(root),
+        evictionGraceMs: 120_000
+    })
+    try {
+        await assign(supervisor, identity("StuckWorker"))
+        const invoke = (method: string) =>
+            handle(supervisor, { type: "invoke", request_id: method, method, args: [] }, () => {})
+        assert.equal((await invoke("read")).type, "invoked")
+        const stuck = invoke("stuck")
+        const evicted = await handle(supervisor, { type: "evict", graceful: false }, () => {})
+        assert.equal(evicted.type, "evicted")
+        const reply = await stuck
+        assert.equal(reply.type, "failed")
+        if (reply.type !== "failed") return
+        assert.equal(reply.code, "actor_worker_terminated")
+        const after = await invoke("read")
+        assert.equal(after.type, "invoked")
+        if (after.type !== "invoked") return
+        assert.equal(after.result, 0)
+    } finally {
+        supervisor.close()
+        await rm(root, { recursive: true, force: true })
+    }
+})
+
 test("worker eviction restores fields and SQL from the host database", { timeout: 30000 }, async context => {
     const root = await createTypeScriptConsumer("SqliteWorker")
     const file = path.join(root, "src/actors.ts")

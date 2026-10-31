@@ -416,8 +416,9 @@ class ActorWorkerSupervisor {
         database: DatabaseRequester
     ): Promise<ActorExecutorReply> {
         // Let work already on the resident worker settle before onSleep runs on it. A call that
-        // does not settle within the grace period ends the actor without onSleep.
-        const drained = await settleWithin([...this.running], this.evictionGraceMs)
+        // does not settle within the grace period ends the actor without onSleep. A forced
+        // eviction skips onSleep, so it has nothing to wait for.
+        const drained = !command.graceful || (await settleWithin([...this.running], this.evictionGraceMs))
         const actor = this.resident
         if (actor === undefined) return { type: "evicted" }
         if (!drained) {
