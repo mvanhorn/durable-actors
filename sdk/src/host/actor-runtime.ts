@@ -259,9 +259,17 @@ class ActorRuntime {
     private async runLifecycleHook(instance: AnyActor, name: "onSleep"): Promise<boolean> {
         const method: unknown = Reflect.get(instance, name)
         if (typeof method !== "function") return false
-        await runWithActorDatabase(instance, async () => {
-            await Reflect.apply(method, instance, [])
-        })
+        // No socket can be reached during eviction, so the hook sees no connections and its effects are dropped.
+        await runWithActorSockets(
+            instance,
+            [],
+            async () =>
+                runWithActorDatabase(instance, async () => {
+                    await Reflect.apply(method, instance, [])
+                }),
+            undefined,
+            this.schemas
+        )
         return true
     }
 }

@@ -279,7 +279,7 @@ export class Session extends Actor {
 }
 ```
 
-Use `onSleep` for last-seen timestamps or flushing buffered state. Socket broadcasts from it are not delivered.
+Use `onSleep` for last-seen timestamps or flushing buffered state. Socket broadcasts from it are not delivered, and `getConnections` returns no sockets.
 
 ## Interleaving calls
 
